@@ -11,6 +11,7 @@ python example, skill, and practice
 - 인스턴스 변수: self키워드와 함께 선언된 변수, 인스턴스 생성시 값이 할당되는 변수
 - 지역 변수: 메소드 안에서 선언된 변수
 
+### 파이썬 변수 스코프 유형 예
 ```py
 module_var = "모듈 레벨 변수(전역 변수)"
 
@@ -31,6 +32,8 @@ class MyClass:
 obj = MyClass("인스턴스 변수")  # 인스턴스 생성
 obj.method()
 ```
+
+### 출력
 
 ```sh
 모듈 레벨 변수: 모듈 레벨 변수(전역 변수)
