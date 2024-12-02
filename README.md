@@ -136,8 +136,8 @@ virtualenv myenv
   - python 활용도가 증가하면서 이런 문제가 많아졌고, python 3.11 부터는 전역에서 `pip install`시 에러or경고 메시지 출력
 - 단점
   - -r 옵션 미지원. requirements.txt로 다수 패키지 일괄 설치 미지원
-  - pipx install시 자동 설치된 dependency 버전은 변경 불가
-  - 추가 패키지를 설치해줘도 별도 격리되기 때문
+  - pipx install시 자동설치된 dependency 외에 세부적인 버전 조정이 힘들 수 있음
+  - pipx로 추가 dependency를 설치하더라도 별도 격리되기 때문
   - `pipx로 설치된 패키지 간 참조불가`. 전역에서만 모든 패키지를 호출가능
     
 - 설치&사용 방법
