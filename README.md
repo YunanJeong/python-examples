@@ -136,3 +136,9 @@ virtualenv myenv
   - python 활용도가 증가하면서 이런 문제가 많아졌고, python 3.11 부터는 전역에서 pip install시 에러or경고 메시지 출력
 - 단점
   - -r 옵션 미지원. requirements.txt로 패키지 일괄 설치 불가.
+- 설치&사용 방법
+```
+# pipx는 내부적으로 pip를 활용하기때문에 사전설치 필요
+# 둘 다 다음처럼 전역에 설치하면 됨
+sudo apt install -y pip pipx
+```
