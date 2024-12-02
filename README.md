@@ -127,13 +127,13 @@ virtualenv myenv
 
 - 용도: 가상환경 없이 python을 전역환경에서 쓰고 싶을 때 사용
 - 특징:
-  - `pip install`처럼 `pipx install`로 설치가능
+  - `pip install`처럼 `pipx install`로 파이썬 패키지 설치가능
   - pipx로 설치된 패키지는 패키지마다 독립된 가상환경에 설치됨
   - 하지만 각 패키지는 전역처럼 호출가능
 - 굳이 이런 방식을 쓰는 이유
   - python을 전역 환경에서 사용하는 것은 비권장
   - 전역 pip로 패키지 설치시 OS 및 기타 시스템 환경과 충돌 가능성 있음
-  - python 활용도가 증가하면서 이런 문제가 많아졌고, python 3.11 부터는 전역에서 pip install시 에러or경고 메시지 출력
+  - python 활용도가 증가하면서 이런 문제가 많아졌고, python 3.11 부터는 전역에서 `pip install`시 에러or경고 메시지 출력
 - 단점
   - -r 옵션 미지원. requirements.txt로 패키지 일괄 설치 불가.
 - 설치&사용 방법
