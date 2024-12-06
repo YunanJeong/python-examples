@@ -113,15 +113,16 @@ virtualenv myenv
 - 용법:
   - 현재 세션에서 특정버전 python을 활성화하는 방식
 - 단점:
-  - `활성화시 CLI가 느려지는데, 생각보다 많이 답답`하므로 필요할 때만 설치하자
+  - ~~활성화시 CLI가 느려지는데, 생각보다 많이 답답~~
+    - pyenv 2.4 버전대부터 해당 이슈 개선됨
   - 그래도 python 설치속도는 anaconda 보다 빠른 듯? python 버전 관리에는 대체제가 딱히 별로 없다.
 
 ### pyenv-virtualenv
 
-- pyenv와 virtualenv를 결합한 도구
-- pyenv에서 virutalenv를 서브모듈처럼 사용
-- virtualenv를 설치하는 것과는 다른 것이니 주의
-- 기능 많고 좋긴 한데, 다소 난해할 수 있으니 필요할 때만 설치&활성화 하자
+- pyenv로 파이썬 버전 뿐 아니라 모듈까지 포함해서 총체적으로 개발환경을 관리하려는 것
+- `pyenv virtualenv`와 같이 서브커맨드로 사용
+- 최근엔 pyenv 설치시 포함됨
+- virtualenv를 단독 별도 설치하는 것과는 다른 것이니 헷갈리지 말자
 
 ### pipx
 
@@ -139,9 +140,10 @@ virtualenv myenv
   - pipx install시 자동설치된 dependency 외에 세부적인 버전 조정이 힘들 수 있음
   - pipx로 추가 dependency를 설치하더라도 별도 격리되기 때문
   - `pipx로 설치된 패키지 간 참조불가`. 전역에서만 모든 패키지를 호출가능
-    
+
 - 설치&사용 방법
-```
+
+```sh
 # pipx는 내부적으로 pip를 활용하기때문에 사전설치 필요
 # 둘 다 다음처럼 전역에 설치하면 됨
 sudo apt install -y pip pipx
