@@ -5,7 +5,7 @@ S3 특정 경로에 파일이 올라오면 내용을 메일로 보내주는 크�
 
 ```
 s3_mail_alert.py        공용 러너
-pipelines.yaml          경로 / 수신자 / 문구
+pipelines.yaml          설정 전부 (발송 경로 / 대상 경로 / 수신자 / 문구)
 test_s3_mail_alert.py   순수함수 유닛테스트
 ```
 
@@ -23,9 +23,11 @@ test_s3_mail_alert.py   순수함수 유닛테스트
 ## 동작
 
 1. 시간 파티셔닝 경로로 이번 회차 대상 프리픽스를 만든다
-2. 그 밑 모든 파일을 읽는다 (gzip이면 매직바이트로 판별해서 푼다 = zcat)
-3. 합본을 `sort -u` 한다 — 줄 단위 중복만 접고 **세부 파싱은 안 한다**
-4. 메일로 보낸다. 원본을 통째로 받아볼 `aws s3 cp` 한 줄도 같이 넣는다
+2. **목록조회로 파일 존재를 확인한다. 없으면 여기서 끝난다** — 빈 회차 비용은 목록조회 한 번뿐이고
+   다운로드는 파일이 있을 때만 일어난다. 주기를 짧게 가져가도 매번 받아오지 않는다
+3. 있으면 그 파일들을 읽는다 (gzip이면 매직바이트로 판별해서 푼다 = zcat)
+4. 합본을 `sort -u` 한다 — 줄 단위 중복만 접고 **세부 파싱은 안 한다**
+5. 메일로 보낸다. 원본을 통째로 받아볼 `aws s3 cp` 한 줄도 같이 넣는다
 
 메일 본문은 이렇게 나온다.
 
@@ -57,7 +59,6 @@ kr-r2o-live 에서 여태 들어온 적 없는 로그타입이 감지되었습�
 ## 실행
 
 ```bash
-export SMTP_SERVER=<smtp주소> SMTP_PORT=25
 uv run s3_mail_alert.py kr-r2o-newlog-live
 ```
 
@@ -66,8 +67,6 @@ uv run s3_mail_alert.py kr-r2o-newlog-live
 ```
 # cron은 PATH가 최소라 uv 경로를 넣어줘야 한다
 PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
-SMTP_SERVER=<smtp주소>
-SMTP_PORT=25
 MAILTO=<장애수신주소>
 
 15 * * * * uv run /home/ubuntu/works/wai-monitor/s3-alert/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
@@ -94,7 +93,10 @@ MAILTO=<장애수신주소>
 ```
 
 `partition_tz` 를 커넥터와 다르게 적으면 어긋난 경로를 보고 "파일 없음"으로 조용히 끝난다.
-SMTP 서버·포트는 보안사항이라 yaml에 두지 않고 환경변수로 넘긴다.
+
+SMTP 서버·포트·발신주소는 `smtp:` 블록에 모든 파이프라인 공용으로 한 번만 적는다. 수신자만 yaml에
+두고 SMTP만 환경변수로 빼는 건 기준이 없다 — 주소는 다 같은 종류의 값이니 **설정은 이 파일 하나**다.
+대신 이 파일 자체를 보안사항으로 취급해 저장소에는 자리표시자만 두고 실제 값은 배포 호스트에만 둔다.
 
 ## 테스트
 
@@ -103,4 +105,4 @@ uv run test_s3_mail_alert.py
 ```
 
 S3·SMTP를 건드리지 않는 순수함수만 검증한다. 파티션 경로 계산, 타임존, gzip 판별, `sort -u`,
-본문 조립, 그리고 `pipelines.yaml` 에 모르는 항목이 섞이지 않았는지.
+본문 조립, **빈 회차에 GET이 안 나가는지**, 그리고 `pipelines.yaml` 에 모르는 항목이 섞이지 않았는지.

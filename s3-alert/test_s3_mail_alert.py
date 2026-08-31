@@ -76,9 +76,10 @@ def test_압축이_아니면_그대로_읽는다():
 
 
 class FakeS3:
-    """list_objects_v2 + get_object 만 흉내내는 대역"""
+    """list_objects_v2 + get_object 만 흉내내는 대역. GET 횟수를 센다."""
     def __init__(self, objects):
         self.objects = objects   # {key: bytes}
+        self.gets = 0
 
     def get_paginator(self, name):
         assert name == "list_objects_v2"
@@ -88,6 +89,7 @@ class FakeS3:
         return [{"Contents": [{"Key": key} for key in self.objects]}]
 
     def get_object(self, Bucket, Key):
+        self.gets += 1
         return {"Body": _Body(self.objects[Key])}
 
 
@@ -104,16 +106,29 @@ def test_프리픽스의_모든_객체를_읽는다():
         "p/a.json": b'{"log_type": "A"}\n',
         "p/b.json.gz": gzip.compress(b'{"log_type": "B"}\n'),
     })
-    assert m.read_objects(s3, "bucket", "p/") == ['{"log_type": "A"}\n', '{"log_type": "B"}\n']
+    keys = m.list_keys(s3, "bucket", "p/")
+    assert m.read_objects(s3, "bucket", keys) == ['{"log_type": "A"}\n', '{"log_type": "B"}\n']
 
 
-def test_디렉터리_표시용_키는_읽지_않는다():
+def test_디렉터리_표시용_키는_목록에서_빠진다():
     s3 = FakeS3({"p/": b"", "p/a.json": b"line\n"})
-    assert m.read_objects(s3, "bucket", "p/") == ["line\n"]
+    assert m.list_keys(s3, "bucket", "p/") == ["p/a.json"]
 
 
-def test_파일이_없으면_빈_목록이다():
-    assert m.read_objects(FakeS3({}), "bucket", "p/") == []
+def test_파일이_없으면_다운로드하지_않는다():
+    # 목록조회가 트리거다. 빈 회차에는 GET 이 한 번도 나가지 않아야 한다
+    s3 = FakeS3({})
+    keys = m.list_keys(s3, "bucket", "p/")
+
+    assert keys == []
+    assert m.read_objects(s3, "bucket", keys) == []
+    assert s3.gets == 0
+
+
+def test_읽은_객체_수만큼만_다운로드한다():
+    s3 = FakeS3({"p/": b"", "p/a.json": b"line\n", "p/b.json": b"line2\n"})
+    m.read_objects(s3, "bucket", m.list_keys(s3, "bucket", "p/"))
+    assert s3.gets == 2
 
 
 # ---- sort -u ---------------------------------------------------------
@@ -157,6 +172,11 @@ def test_본문에_현상_건수_내용_확인명령이_담긴다():
 
 
 # ---- 설정 -------------------------------------------------------------
+
+def test_발송_설정이_한_군데_모여있다():
+    smtp = yaml.safe_load(m.CONFIG_PATH.read_text(encoding="utf-8"))["smtp"]
+    assert set(smtp) == {"server", "port", "from_name", "from_addr"}
+
 
 def test_모든_파이프라인이_필수_항목을_갖고_있다():
     pipelines = yaml.safe_load(m.CONFIG_PATH.read_text(encoding="utf-8"))["pipelines"]

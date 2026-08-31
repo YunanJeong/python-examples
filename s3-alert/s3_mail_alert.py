@@ -5,7 +5,7 @@
 #
 # S3 알림 파일 메일 발송 (알림 파이프라인 공용 러너)
 #
-# 대상 프리픽스의 모든 파일을 읽어 합본을 sort -u 해서 메일 본문에 싣는다.
+# 대상 프리픽스에 파일이 "존재하면" 그 파일들을 읽어 합본을 sort -u 해서 메일 본문에 싣는다.
 # 세부 파싱은 하지 않는다. 줄 단위 중복만 접고 나머지는 올라온 그대로 보낸다.
 # 상태를 기억하지 않고, S3에 쓰지도 지우지도 않는다.
 #
@@ -15,8 +15,6 @@
 #
 #   # cron은 PATH가 최소라 uv 경로를 넣어줘야 한다
 #   PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
-#   SMTP_SERVER=<smtp주소>
-#   SMTP_PORT=25
 #   MAILTO=<장애수신주소>
 #
 #   15 * * * * uv run /home/ubuntu/works/wai-monitor/s3-alert/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
@@ -99,22 +97,30 @@ def decode(raw):
     return raw.decode("utf-8")
 
 
-def read_objects(s3, bucket, prefix):
-    """프리픽스 밑 모든 객체를 읽어 본문 문자열 목록으로 돌려준다.
+def list_keys(s3, bucket, prefix):
+    """목록조회가 트리거다. 여기가 비면 GET 을 한 번도 하지 않고 끝난다.
 
-    로컬에 파일을 만들지 않는다. 받아서 풀고 합치는 걸 전부 메모리에서 하므로 치울 것이 없다.
-    알림 볼륨이 극소라 가능한 방식이다.
+    알림 주기가 짧아져도 빈 회차의 비용은 목록조회 한 번뿐이다.
     """
-    texts = []
+    keys = []
 
     for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             # 콘솔에서 만든 디렉터리 표시용 0바이트 키는 제외한다
             if obj["Key"].endswith("/"):
                 continue
-            texts.append(decode(s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()))
+            keys.append(obj["Key"])
 
-    return texts
+    return keys
+
+
+def read_objects(s3, bucket, keys):
+    """파일이 있다고 확인된 다음에만 불린다.
+
+    로컬에 파일을 만들지 않는다. 받아서 풀고 합치는 걸 전부 메모리에서 하므로 치울 것이 없다.
+    알림 볼륨이 극소라 가능한 방식이다.
+    """
+    return [decode(s3.get_object(Bucket=bucket, Key=key)["Body"].read()) for key in keys]
 
 
 def sort_unique(texts):
@@ -150,10 +156,12 @@ def main():
         sys.exit(f"usage: {Path(sys.argv[0]).name} <파이프라인명>   ({CONFIG_PATH} 의 pipelines 키)")
 
     name = sys.argv[1]
-    pipelines = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))["pipelines"]
+    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    pipelines = config["pipelines"]
     if name not in pipelines:
         sys.exit(f"'{name}' 은 {CONFIG_PATH} 에 없다. 사용 가능: {', '.join(sorted(pipelines))}")
 
+    smtp = config["smtp"]
     conf = pipelines[name]
     bucket = conf["bucket"]
     tz_name = conf["partition_tz"]
@@ -161,26 +169,28 @@ def main():
     at = target_time(conf.get("offset_hours", 1), tz_name)
     prefix = target_prefix(conf["prefix"], conf["partition_format"], at)
 
-    texts = read_objects(boto3.client("s3"), bucket, prefix)
-    lines = sort_unique(texts)
-    if not lines:
+    s3 = boto3.client("s3")
+    keys = list_keys(s3, bucket, prefix)
+    if not keys:
         print(f"s3_mail_alert.py {name} nothing at s3://{bucket}/{prefix}")
         return
 
+    lines = sort_unique(read_objects(s3, bucket, keys))
+
     SmtpMailer(
-        host      = os.environ["SMTP_SERVER"],
-        port      = os.environ["SMTP_PORT"],
-        from_name = "wai-monitor",
-        from_addr = "no-reply@webzen.com",
+        host      = smtp["server"],
+        port      = smtp["port"],
+        from_name = smtp["from_name"],
+        from_addr = smtp["from_addr"],
         to_addrs  = conf["to"],
         cc_addrs  = conf.get("cc"),
     ).send(
         f"{conf['subject']} ({len(lines)}건)",
-        build_body(conf["message"], at, tz_name, len(texts), lines,
+        build_body(conf["message"], at, tz_name, len(keys), lines,
                    download_command(bucket, prefix, name, at)),
     )
 
-    print(f"s3_mail_alert.py {name} sent files={len(texts)} lines={len(lines)} prefix=s3://{bucket}/{prefix}")
+    print(f"s3_mail_alert.py {name} sent files={len(keys)} lines={len(lines)} prefix=s3://{bucket}/{prefix}")
 
 
 if __name__ == "__main__":
