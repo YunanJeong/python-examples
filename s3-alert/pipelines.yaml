@@ -1,0 +1,49 @@
+#
+# 알림 파이프라인 목록. 알림이 늘어나면 러너를 고치지 않고 여기에 항목만 추가한다.
+# 키가 곧 실행 인자다:  uv run s3_mail_alert.py kr-r2o-newlog-live
+#
+# bucket            (필수) 알림 파일이 올라오는 버킷
+# prefix            (필수) 시간 파티셔닝 경로를 뺀 기준 프리픽스
+# partition_format  (필수) strftime 패턴. S3 sink connector 의 path.format 과 같은 단위여야 한다
+# partition_tz      (필수) S3 sink connector 의 timezone 설정과 같아야 한다
+# offset_hours      몇 시간 전 파티션을 볼지. 기본 1 (직전 시간 파티션)
+# subject           (필수) 메일 제목. 뒤에 건수가 붙는다
+# message           (필수) 본문 첫 줄. "무슨 서비스에서 무슨 현상" 을 사람 말로 적는다
+# to / cc           (to 필수) 콤마로 구분되는 단일 문자열
+#
+# SMTP 서버·포트는 보안사항이라 여기 두지 않고 환경변수(SMTP_SERVER, SMTP_PORT)로 넘긴다.
+#
+
+pipelines:
+
+  kr-r2o-newlog-live:
+    bucket: "<버킷>"
+    prefix: "alert/newlog.s3.beat.r2o.live"
+    partition_format: "year=%Y/month=%m/day=%d/hour=%H"
+    partition_tz: "Asia/Seoul"
+    offset_hours: 1
+    subject: "[kr-r2o-live] 신규 로그타입 검출"
+    message: "kr-r2o-live 에서 여태 들어온 적 없는 로그타입이 감지되었습니다."
+    to: "<수신주소>"
+    cc: "<참조주소>"
+
+  kr-r2o-newlog-alpha:
+    bucket: "<버킷>"
+    prefix: "alert/newlog.s3.beat.r2o.alpha"
+    partition_format: "year=%Y/month=%m/day=%d/hour=%H"
+    partition_tz: "Asia/Seoul"
+    offset_hours: 1
+    subject: "[kr-r2o-alpha] 신규 로그타입 검출"
+    message: "kr-r2o-alpha 에서 여태 들어온 적 없는 로그타입이 감지되었습니다."
+    to: "<수신주소>"
+
+  kr-r2o-error-live:
+    bucket: "<버킷>"
+    prefix: "alert/error.beat.r2o.live"
+    partition_format: "year=%Y/month=%m/day=%d/hour=%H"
+    partition_tz: "Asia/Seoul"
+    offset_hours: 1
+    subject: "[kr-r2o-live] 에러 레코드 발생"
+    message: "kr-r2o-live 에서 처리할 수 없는 레코드가 발생했습니다."
+    to: "<수신주소>"
+    cc: "<참조주소>"
