@@ -19,7 +19,45 @@ sys.path.insert(0, str(Path(__file__).parent))
 import s3_mail_alert as m
 
 HOURLY = "year=%Y/month=%m/day=%d/hour=%H"
+DAILY = "year=%Y/month=%m/day=%d"
 KST = ZoneInfo("Asia/Seoul")
+
+
+# ---- 설정 병합 / 대상 선택 -------------------------------------------
+
+def test_defaults_가_모든_파이프라인에_깔린다():
+    merged = m.merge_defaults({
+        "defaults": {"partition_tz": "Asia/Seoul", "offset_hours": 1},
+        "pipelines": {"a": {"prefix": "p/a"}, "b": {"prefix": "p/b"}},
+    })
+    assert merged["a"] == {"prefix": "p/a", "partition_tz": "Asia/Seoul", "offset_hours": 1}
+    assert merged["b"]["partition_tz"] == "Asia/Seoul"
+
+
+def test_파이프라인_값이_defaults를_덮는다():
+    merged = m.merge_defaults({
+        "defaults": {"offset_hours": 1},
+        "pipelines": {"a": {"offset_hours": 25}},
+    })
+    assert merged["a"]["offset_hours"] == 25
+
+
+def test_defaults가_없어도_된다():
+    assert m.merge_defaults({"pipelines": {"a": {"prefix": "p/a"}}}) == {"a": {"prefix": "p/a"}}
+
+
+def test_설정파일의_항목을_전부_돈다():
+    pipelines = {"a": {"enabled": True}, "b": {"enabled": True}}
+    assert m.select(pipelines) == (["a", "b"], [])
+
+
+def test_enabled_false는_건너뛰고_목록에_남는다():
+    pipelines = {"a": {"enabled": True}, "b": {"enabled": False}}
+    assert m.select(pipelines) == (["a"], ["b"])
+
+
+def test_이름을_지정하면_enabled_false여도_돈다():
+    assert m.select({"b": {"enabled": False}}, name="b") == (["b"], [])
 
 
 # ---- 파티션 경로 ------------------------------------------------------
@@ -61,7 +99,7 @@ def test_기준_프리픽스의_슬래시는_중복되지_않는다():
 
 def test_일단위_파티션이면_경로도_일단위로_나온다():
     at = m.target_time(1, "Asia/Seoul", datetime(2026, 8, 31, 14, 15, tzinfo=KST))
-    assert m.target_prefix("alert/newlog", "year=%Y/month=%m/day=%d", at) == \
+    assert m.target_prefix("alert/newlog", DAILY, at) == \
         "alert/newlog/year=2026/month=08/day=31/"
 
 
@@ -155,8 +193,8 @@ def test_읽을_내용이_없으면_빈_목록이다():
 
 def test_확인_명령은_프리픽스_전체를_로컬로_받는_한_줄이다():
     at = datetime(2026, 8, 31, 13, 0, tzinfo=KST)
-    assert m.download_command("mybucket", "alert/newlog/hour=13/", "kr-r2o-newlog-live", at) == \
-        "aws s3 cp --recursive s3://mybucket/alert/newlog/hour=13/ ./kr-r2o-newlog-live-20260831-1300/"
+    assert m.download_command("mybucket", "alert/newlog/hour=13/", "kr-r2o-live-newlog", at) == \
+        "aws s3 cp --recursive s3://mybucket/alert/newlog/hour=13/ ./kr-r2o-live-newlog-20260831-1300/"
 
 
 def test_본문에_현상_건수_내용_확인명령이_담긴다():
@@ -173,27 +211,52 @@ def test_본문에_현상_건수_내용_확인명령이_담긴다():
 
 # ---- 설정 -------------------------------------------------------------
 
-def test_발송_설정이_한_군데_모여있다():
-    smtp = yaml.safe_load(m.CONFIG_PATH.read_text(encoding="utf-8"))["smtp"]
-    assert set(smtp) == {"server", "port", "from_name", "from_addr"}
+CONFIG_PATH = Path(__file__).with_name("pipelines.yaml")
+
+
+def _config():
+    return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def test_발송_설정은_기본값에만_적혀있다():
+    # 전부 같은 값이라 파이프라인마다 반복할 이유가 없다
+    defaults = _config()["defaults"]
+    for key in ("smtp_server", "smtp_port", "from_name", "from_addr"):
+        assert key in defaults
+
+    for name, conf in _config()["pipelines"].items():
+        assert not {"smtp_server", "from_addr"} & set(conf), f"{name} 이 발송 설정을 따로 갖고 있다"
 
 
 def test_모든_파이프라인이_필수_항목을_갖고_있다():
-    pipelines = yaml.safe_load(m.CONFIG_PATH.read_text(encoding="utf-8"))["pipelines"]
+    # defaults 로 채워지는 것까지 합쳐서 본다
+    pipelines = m.merge_defaults(_config())
     assert pipelines
 
     for name, conf in pipelines.items():
-        for key in ("bucket", "prefix", "partition_format", "partition_tz", "subject", "message", "to"):
+        for key in ("smtp_server", "smtp_port", "from_name", "from_addr",
+                    "bucket", "prefix", "partition_format", "partition_tz",
+                    "offset_hours", "subject", "message", "to", "enabled"):
             assert key in conf, f"{name} 에 {key} 가 없다"
 
 
 def test_설정에_모르는_항목이_없다():
-    allowed = {"bucket", "prefix", "partition_format", "partition_tz",
-               "offset_hours", "subject", "message", "to", "cc"}
-    pipelines = yaml.safe_load(m.CONFIG_PATH.read_text(encoding="utf-8"))["pipelines"]
+    # enable: false 같은 오타는 "값 없음" 과 똑같이 동작해서 조용히 계속 돈다. 여기서 잡는다
+    allowed = {"smtp_server", "smtp_port", "from_name", "from_addr",
+               "bucket", "prefix", "partition_format", "partition_tz",
+               "offset_hours", "subject", "message", "to", "cc", "enabled"}
+    config = _config()
 
-    for name, conf in pipelines.items():
+    for name, conf in config["pipelines"].items():
         assert set(conf) <= allowed, f"{name} 에 모르는 항목: {set(conf) - allowed}"
+
+    assert set(config["defaults"]) <= allowed
+
+
+def test_한_설정파일의_파티션_단위는_하나다():
+    # 크론 한 줄이 이 파일을 담당하므로 주기가 다른 항목이 섞이면 그 항목은 헛돈다
+    formats = {conf["partition_format"] for conf in m.merge_defaults(_config()).values()}
+    assert len(formats) == 1, f"주기가 다른 항목은 설정파일을 따로 만든다: {formats}"
 
 
 if __name__ == "__main__":

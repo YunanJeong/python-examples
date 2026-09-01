@@ -9,16 +9,17 @@
 # 세부 파싱은 하지 않는다. 줄 단위 중복만 접고 나머지는 올라온 그대로 보낸다.
 # 상태를 기억하지 않고, S3에 쓰지도 지우지도 않는다.
 #
-# 크론 등록 예시 (crontab -e). 파티션 단위와 크론 주기를 1:1로 맞춘다.
+# 설정파일 하나가 크론 한 줄의 담당범위다. 알림 추가는 그 파일에 항목만 더한다.
 #
-#   # uv 는 절대경로로 부른다
+#   # uv 와 설정파일은 절대경로로 부른다
 #   # 매시 15분 + hour 파티션 + offset_hours: 1 -> 14:15 회차가 hour=13 을 읽는다
-#   15 * * * * <uv설치경로>/uv run <스크립트경로>/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
+#   15 * * * * <uv설치경로>/uv run <스크립트경로>/s3_mail_alert.py <설정경로>/pipelines.yaml >> /var/log/s3_alert.log
 
+import argparse
 import gzip
-import os
 import smtplib
 import sys
+import traceback
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -28,8 +29,6 @@ from zoneinfo import ZoneInfo
 
 import boto3
 import yaml
-
-CONFIG_PATH = Path(os.environ.get("S3_ALERT_CONFIG", Path(__file__).with_name("pipelines.yaml")))
 
 
 # 소규모 SMTP 서버의 경우 인증절차 없이 smtp 서버, 포트로만 하는 경우도 있는데 그럴 땐 서버, 포트 주소 자체가 보안사항
@@ -64,6 +63,35 @@ class SmtpMailer:
             # server.starttls()                              # 필요시 사용 (TLS 사용시)
             # server.login(self.from_addr, self.password)     # 필요시 사용 (로그인)
             server.sendmail(self.from_addr, receiver_list, msg.as_string())
+
+
+def merge_defaults(raw):
+    """defaults 를 각 파이프라인에 깔고 파이프라인 값으로 덮는다.
+
+    수십 개가 전부 같은 값을 갖는 항목(파티션 형식·타임존)을 한 번만 적기 위한 것이다.
+    기본값은 전부 여기(yaml)에 있다. 코드에 숨겨두면 설정만 보고 동작을 알 수 없다.
+    """
+    defaults = raw.get("defaults") or {}
+    return {name: {**defaults, **conf} for name, conf in raw["pipelines"].items()}
+
+
+def select(pipelines, name=None):
+    """돌릴 파이프라인 목록과 enabled: false 로 건너뛴 목록.
+
+    이름을 명시하면 enabled 를 무시한다. 재워둔 알림을 수동으로 재발송하는 용도다.
+    """
+    if name:
+        return [name], []
+
+    targets, skipped = [], []
+
+    for key, conf in pipelines.items():
+        if conf["enabled"]:
+            targets.append(key)
+        else:
+            skipped.append(key)
+
+    return targets, skipped
 
 
 def target_time(offset_hours, tz_name, now=None):
@@ -145,37 +173,25 @@ def download_command(bucket, prefix, name, at):
     return f"aws s3 cp --recursive s3://{bucket}/{prefix} ./{name}-{at:%Y%m%d-%H%M}/"
 
 
-def main():
-    if len(sys.argv) != 2:
-        sys.exit(f"usage: {Path(sys.argv[0]).name} <파이프라인명>   ({CONFIG_PATH} 의 pipelines 키)")
-
-    name = sys.argv[1]
-    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    pipelines = config["pipelines"]
-    if name not in pipelines:
-        sys.exit(f"'{name}' 은 {CONFIG_PATH} 에 없다. 사용 가능: {', '.join(sorted(pipelines))}")
-
-    smtp = config["smtp"]
-    conf = pipelines[name]
+def run_pipeline(s3, name, conf):
+    """한 파이프라인 처리. 결과 한 줄을 돌려준다."""
     bucket = conf["bucket"]
     tz_name = conf["partition_tz"]
 
-    at = target_time(conf.get("offset_hours", 1), tz_name)
+    at = target_time(conf["offset_hours"], tz_name)
     prefix = target_prefix(conf["prefix"], conf["partition_format"], at)
 
-    s3 = boto3.client("s3")
     keys = list_keys(s3, bucket, prefix)
     if not keys:
-        print(f"s3_mail_alert.py {name} nothing at s3://{bucket}/{prefix}")
-        return
+        return f"{name} nothing at s3://{bucket}/{prefix}"
 
     lines = sort_unique(read_objects(s3, bucket, keys))
 
     SmtpMailer(
-        host      = smtp["server"],
-        port      = smtp["port"],
-        from_name = smtp["from_name"],
-        from_addr = smtp["from_addr"],
+        host      = conf["smtp_server"],
+        port      = conf["smtp_port"],
+        from_name = conf["from_name"],
+        from_addr = conf["from_addr"],
         to_addrs  = conf["to"],
         cc_addrs  = conf.get("cc"),
     ).send(
@@ -184,7 +200,40 @@ def main():
                    download_command(bucket, prefix, name, at)),
     )
 
-    print(f"s3_mail_alert.py {name} sent files={len(keys)} lines={len(lines)} prefix=s3://{bucket}/{prefix}")
+    return f"{name} sent files={len(keys)} lines={len(lines)} prefix=s3://{bucket}/{prefix}"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="S3 알림 파일 메일 발송")
+    parser.add_argument("config",
+                       help="읽을 설정파일. 이 파일 하나가 크론 한 줄의 담당범위다")
+    parser.add_argument("pipeline", nargs="?",
+                       help="이 파이프라인만 실행한다. enabled: false 도 무시하고 돌린다 (수동 재발송)")
+    args = parser.parse_args()
+
+    pipelines = merge_defaults(yaml.safe_load(Path(args.config).read_text(encoding="utf-8")))
+
+    if args.pipeline and args.pipeline not in pipelines:
+        sys.exit(f"'{args.pipeline}' 은 {args.config} 에 없다. 사용 가능: {', '.join(sorted(pipelines))}")
+
+    targets, skipped = select(pipelines, args.pipeline)
+
+    s3 = boto3.client("s3")
+    failed = []
+
+    # 파이프라인 단위로 예외를 격리한다. 하나가 죽어서 나머지 알림이 안 나가면 안 된다.
+    for name in targets:
+        try:
+            print(f"s3_mail_alert.py {run_pipeline(s3, name, pipelines[name])}")
+        except Exception:
+            traceback.print_exc()
+            failed.append(name)
+
+    print(f"s3_mail_alert.py done config={args.config} ran={len(targets)} "
+          f"failed={','.join(failed) or '-'} skipped={','.join(skipped) or '-'}")
+
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

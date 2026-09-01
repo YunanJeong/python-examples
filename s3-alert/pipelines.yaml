@@ -1,59 +1,71 @@
 #
-# 설정 전부. 알림이 늘어나면 러너를 고치지 않고 여기에 항목만 추가한다.
-# pipelines 의 키가 곧 실행 인자다:  uv run s3_mail_alert.py kr-r2o-newlog-live
+# 이 파일 하나가 크론 한 줄의 담당범위다. 알림이 늘어나면 러너도 크론탭도 고치지 않고 여기에 항목만 추가한다.
+# 주기가 다른 알림은 설정파일을 따로 만들어 크론 줄을 하나 더 등록한다 (파티션 단위와 주기를 맞춘다).
 #
-# smtp              (필수) 발송 경로. 모든 파이프라인이 공유하므로 위에 한 번만 적는다
+# defaults   모든 파이프라인에 깔리는 기본값. 파이프라인에 같은 항목을 적으면 그게 이긴다
+#            발송 설정처럼 전부 같은 값은 여기에만 적는다. 코드에 숨은 기본값은 없다
 #
-# 이하 pipelines 항목별
+# 항목 목록 (defaults / pipelines 어느 쪽에 적어도 된다)
 #
+# enabled           (필수) false 면 순회에서 건너뛴다. defaults 에 true 로 적어두고 끌 항목에만 false 를 적는다
+#                   항목을 주석처리하지 말고 이 한 줄로 끈다 (블록 주석은 yaml 을 깨뜨려 전부 멈춘다)
+#                   이름을 직접 지정해 실행하면 false 여도 돈다 (수동 재발송)
+# smtp_server       (필수) 발송 SMTP 서버
+# smtp_port         (필수) 발송 SMTP 포트
+# from_name         (필수) 발신자 표시 이름
+# from_addr         (필수) 발신 주소
 # bucket            (필수) 알림 파일이 올라오는 버킷
 # prefix            (필수) 시간 파티셔닝 경로를 뺀 기준 프리픽스
 # partition_format  (필수) strftime 패턴. S3 sink connector 의 path.format 과 같은 단위여야 한다
 # partition_tz      (필수) S3 sink connector 의 timezone 설정과 같아야 한다
-# offset_hours      몇 시간 전 파티션을 볼지. 기본 1 (직전 시간 파티션)
+# offset_hours      (필수) 몇 시간 전 파티션을 볼지. 1 이면 직전 파티션
 # subject           (필수) 메일 제목. 뒤에 건수가 붙는다
 # message           (필수) 본문 첫 줄. "무슨 서비스에서 무슨 현상" 을 사람 말로 적는다
-# to / cc           (to 필수) 콤마로 구분되는 단일 문자열
+# to / cc           (to 필수) 콤마로 구분되는 단일 문자열. 항목마다 따로 적는다
 #
 # 경우에 따라 smtp 주소 및 메일주소 등이 보안사항일 수 있음 주의
 #
 
-smtp:
-  server: "<smtp주소>"
-  port: 25
+defaults:
+  enabled: true
+  smtp_server: "<smtp주소>"
+  smtp_port: 25
   from_name: "<발신이름>"
   from_addr: "<발신주소>"
+  partition_format: "year=%Y/month=%m/day=%d/hour=%H"
+  partition_tz: "Asia/Seoul"
+  offset_hours: 1
 
 pipelines:
 
-  kr-r2o-newlog-live:
+  kr-r2o-live-newlog:
     bucket: "<버킷>"
     prefix: "alert/newlog.s3.beat.r2o.live"
-    partition_format: "year=%Y/month=%m/day=%d/hour=%H"
-    partition_tz: "Asia/Seoul"
-    offset_hours: 1
     subject: "[kr-r2o-live] 신규 로그타입 검출"
     message: "kr-r2o-live 에서 여태 들어온 적 없는 로그타입이 감지되었습니다."
     to: "<수신주소>"
     cc: "<참조주소>"
 
-  kr-r2o-newlog-alpha:
+  kr-r2o-alpha-newlog:
     bucket: "<버킷>"
     prefix: "alert/newlog.s3.beat.r2o.alpha"
-    partition_format: "year=%Y/month=%m/day=%d/hour=%H"
-    partition_tz: "Asia/Seoul"
-    offset_hours: 1
     subject: "[kr-r2o-alpha] 신규 로그타입 검출"
     message: "kr-r2o-alpha 에서 여태 들어온 적 없는 로그타입이 감지되었습니다."
     to: "<수신주소>"
 
-  kr-r2o-error-live:
+  kr-r2o-live-error:
     bucket: "<버킷>"
     prefix: "alert/error.beat.r2o.live"
-    partition_format: "year=%Y/month=%m/day=%d/hour=%H"
-    partition_tz: "Asia/Seoul"
-    offset_hours: 1
     subject: "[kr-r2o-live] 에러 레코드 발생"
     message: "kr-r2o-live 에서 처리할 수 없는 레코드가 발생했습니다."
     to: "<수신주소>"
     cc: "<참조주소>"
+
+  # 재워둔 항목 예시. 순회에서 빠지고 이름을 직접 지정할 때만 돈다
+  kr-r2o-dev-newlog:
+    enabled: false
+    bucket: "<버킷>"
+    prefix: "alert/newlog.s3.beat.r2o.dev"
+    subject: "[kr-r2o-dev] 신규 로그타입 검출"
+    message: "kr-r2o-dev 에서 여태 들어온 적 없는 로그타입이 감지되었습니다."
+    to: "<수신주소>"
