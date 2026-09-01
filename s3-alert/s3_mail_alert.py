@@ -9,17 +9,13 @@
 # 세부 파싱은 하지 않는다. 줄 단위 중복만 접고 나머지는 올라온 그대로 보낸다.
 # 상태를 기억하지 않고, S3에 쓰지도 지우지도 않는다.
 #
-# 크론 등록 예시 (crontab -e)
-# 파티션 단위와 크론 주기를 1:1로 맞춘다. hour 파티션이면 시간별 크론.
-# 파티션이 다 채워진 뒤 읽도록 정시보다 뒤에 걸고, offset_hours 만큼 앞 파티션을 본다.
+# 크론 등록 예시 (crontab -e). 파티션 단위와 크론 주기를 1:1로 맞춘다.
 #
-#   # cron은 PATH가 최소라 uv 경로를 넣어줘야 한다
+#   # 크론은 PATH가 최소라 uv 를 못 찾는다
 #   PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
-#   MAILTO=<장애수신주소>
 #
+#   # 매시 15분 + hour 파티션 + offset_hours: 1 -> 14:15 회차가 hour=13 을 읽는다
 #   15 * * * * uv run /home/ubuntu/works/wai-monitor/s3-alert/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
-#
-# MAILTO를 두고 stdout만 리다이렉션하면 스크립트가 죽었을 때 stderr가 크론을 통해 메일로 온다.
 
 import gzip
 import os
