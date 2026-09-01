@@ -11,11 +11,9 @@
 #
 # 크론 등록 예시 (crontab -e). 파티션 단위와 크론 주기를 1:1로 맞춘다.
 #
-#   # 크론은 PATH가 최소라 uv 를 못 찾는다
-#   PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
-#
+#   # uv 는 절대경로로 부른다
 #   # 매시 15분 + hour 파티션 + offset_hours: 1 -> 14:15 회차가 hour=13 을 읽는다
-#   15 * * * * uv run /home/ubuntu/works/wai-monitor/s3-alert/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
+#   15 * * * * <uv설치경로>/uv run <스크립트경로>/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
 
 import gzip
 import os
@@ -138,7 +136,7 @@ def build_body(message, at, tz_name, files, lines, command):
         f"원본 그대로 받아보려면:\n"
         f"  {command}\n"
         f"\n"
-        f"Powered by wai-monitor / crontab / uv\n"
+        f"Powered by crontab / uv\n"
     )
 
 

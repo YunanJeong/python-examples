@@ -22,11 +22,9 @@ uv run s3_mail_alert.py kr-r2o-newlog-live      # 인자는 pipelines.yaml 의 �
 크론 한 줄 = 파이프라인 하나. **크론 주기와 파티션 단위를 1:1로 맞춘다.(default hourly 기준으로 작업한다.)**
 
 ```sh
-# 크론은 PATH가 최소라 uv 를 못 찾는다
-PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
-
+# uv 는 절대경로로 부른다
 # 매시 15분 + hour 파티션 + offset_hours: 1 → 14:15 회차가 hour=13 을 읽는다
-15 * * * * uv run /home/ubuntu/works/wai-monitor/s3-alert/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
+15 * * * * <uv설치경로>/uv run <스크립트경로>/s3_mail_alert.py kr-r2o-newlog-live >> /var/log/s3_alert.log
 ```
 
 ## 알림 추가

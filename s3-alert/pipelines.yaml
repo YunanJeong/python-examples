@@ -21,7 +21,7 @@
 smtp:
   server: "<smtp주소>"
   port: 25
-  from_name: "wai-monitor"
+  from_name: "<발신이름>"
   from_addr: "<발신주소>"
 
 pipelines:
