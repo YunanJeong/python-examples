@@ -47,7 +47,7 @@ uv run s3_mail_alert.py pipelines.yaml kr-r2o-live-newlog     # 하나만 (enabl
 다를 때만 항목에 적는다. 항목에 적은 값이 기본값을 덮는다. 코드에 숨은 기본값은 없다.
 `partition_format` 의 단위는 그 파일을 부르는 크론 주기와 맞춘다.
 
-실제 값이 담긴 `pipelines.yaml` 은 배포 호스트에만 둔다.
+경우에 따라 smtp 주소 및 메일주소 등이 보안사항일 수 있음 주의.
 
 ## 테스트
 
